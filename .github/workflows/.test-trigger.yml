@@ -1,0 +1,7 @@
+name: test-trigger
+on: workflow_dispatch
+jobs:
+  ok:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'factory test run'
