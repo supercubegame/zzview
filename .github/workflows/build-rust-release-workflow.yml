@@ -1,0 +1,87 @@
+name: build-and-release
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Read version from Cargo.toml
+        run: |
+          VER=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
+          echo "resolved v${VER}"
+  build:
+    needs: [ version ]
+    name: build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+          - os: macos-latest
+            label: macos-arm64
+          - os: windows-latest
+            label: windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux GUI deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxkbcommon-dev pkg-config xvfb imagemagick x11-utils xdotool
+      - name: Build release binary
+        run: cargo build --release
+      - name: Capture real screenshot
+        if: runner.os == 'Linux'
+        env:
+          ICED_BACKEND: tiny-skia
+          WGPU_BACKEND: gl
+        run: |
+          chmod +x scripts/demo.sh || true
+          ./scripts/demo.sh || true
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          BIN=$(basename "$GITHUB_REPOSITORY")
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/release/${BIN}.exe" "dist/${BIN}-${{ matrix.label }}.exe"
+          else
+            cp "target/release/${BIN}" "dist/${BIN}-${{ matrix.label }}"
+          fi
+          cp -r shots/* dist/ 2>/dev/null || true
+          cp -r dist_shots/* dist/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: dist/*
+  release:
+    needs: [ version, build ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ \;
+          ls -la dist
+      - name: Publish ${{ needs.version.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" dist/* --title "$TAG" --notes "Automated build from ${GITHUB_SHA:0:7}."
