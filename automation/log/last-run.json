@@ -1,8 +1,8 @@
 {
-  "started_at": "2026-09-16T17:40:44+00:00",
-  "finished_at": "2026-09-16T17:40:49+00:00",
+  "started_at": "2026-09-16T20:27:31+00:00",
+  "finished_at": "2026-09-16T20:27:33+00:00",
   "repo": "supercubegame/zzview",
-  "run_url": "https://github.com/supercubegame/zzview/actions/runs/35129655466",
+  "run_url": "https://github.com/supercubegame/zzview/actions/runs/35146650189",
   "dry_run": false,
   "results": [
     {
@@ -22,14 +22,6 @@
       "file": ".github/workflows/.test-trigger.yml",
       "state": "unchanged",
       "detail": "https://github.com/supercubegame/zzview/blob/main/.github/workflows/.test-trigger.yml"
-    },
-    {
-      "task": "869f2yvhh",
-      "title": "Build Rust release workflow",
-      "file": ".github/workflows/build-rust-release-workflow.yml",
-      "state": "created",
-      "detail": "https://github.com/supercubegame/zzview/commit/358fcc4ed5a10124ef8fe31d1c77ed96b5f768fd",
-      "source": "template:rust-release"
     }
   ]
 }
