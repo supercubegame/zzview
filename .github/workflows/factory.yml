@@ -1,0 +1,58 @@
+# ==========================================================================
+#  ONE-TIME PASTE FILE  (GitHub web UI: Add file -> Create new file)
+#  Target path: .github/workflows/factory.yml
+#
+#  This is the only file that must be created by hand: OAuth tokens cannot
+#  write into .github/workflows/. Once it exists, everything else is handled
+#  by automation/clickup_factory.py, which can be updated freely through the
+#  ClickUp GitHub integration.
+# ==========================================================================
+name: workflow-factory
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'automation/requests/**'
+      - 'automation/clickup_factory.py'
+      - '.github/workflows/factory.yml'
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Plan only, write nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-factory
+  cancel-in-progress: false
+
+jobs:
+  factory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install --quiet pyjwt cryptography
+
+      - name: Run workflow factory
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          INSTALLATION_ID: ${{ secrets.INSTALLATION_ID }}
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          CLICKUP_LIST_ID: ${{ secrets.CLICKUP_LIST_ID }}
+          TRIGGER_TAG: create-workflow
+          DONE_TAG: workflow-created
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python automation/clickup_factory.py
