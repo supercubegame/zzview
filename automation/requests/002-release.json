@@ -1,0 +1,5 @@
+{
+  "file": "release.yml",
+  "template": "rust-release",
+  "message": "factory: cross-platform build + release, tag read from Cargo.toml"
+}

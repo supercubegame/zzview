@@ -1,0 +1,5 @@
+{
+  "file": "ci.yml",
+  "template": "rust-ci",
+  "message": "factory: replace npm CI with real Rust CI"
+}
