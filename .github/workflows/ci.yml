@@ -1,9 +1,29 @@
-name: CI
-on: [push, pull_request]
+name: ci
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  check:
+    name: check ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
-      - uses: actions/checkout@v3
-      - run: npm install
-      - run: npm test
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustc --version && cargo --version
+      - name: Linux GUI deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxkbcommon-dev pkg-config
+      - name: Resolve dependencies
+        run: cargo generate-lockfile
+      - name: Build
+        run: cargo build --verbose
+      - name: Test
+        run: cargo test --verbose
