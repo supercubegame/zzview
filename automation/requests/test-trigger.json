@@ -1,0 +1,1 @@
+{"file": ".test-trigger.yml", "content": "name: test-trigger\non: workflow_dispatch\njobs:\n  ok:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 'factory test run'\n"}
