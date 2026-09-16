@@ -21,6 +21,9 @@ Two input channels:
 Writes into .github/workflows/ use a GitHub App installation token: the App
 carries Workflows: read & write, which plain OAuth tokens do not.
 
+Every outcome is also emitted as a GitHub Actions annotation, because the CI
+log endpoint needs auth while the check-runs annotations API does not.
+
 Env / secrets:
   APP_ID            GitHub App id                       (required)
   APP_PRIVATE_KEY   full .pem contents                  (required)
@@ -59,6 +62,49 @@ UA = "zzview-workflow-factory"
 
 def log(msg):
     print(msg, flush=True)
+
+
+def annotate(level, title, message):
+    """Emit a GitHub Actions annotation.
+
+    Annotations are readable through the public check-runs API, which is the
+    only failure channel available to a caller that cannot authenticate
+    against the CI log endpoint. Never pass secret values in here.
+    """
+    text = str(message).replace("\r", " ").replace("\n", "%0A")[:1200]
+    print(f"::{level} title={title}::{text}", flush=True)
+
+
+SECRET_KEYS = ("APP_ID", "APP_PRIVATE_KEY", "INSTALLATION_ID",
+               "CLICKUP_TOKEN", "CLICKUP_LIST_ID")
+
+
+def preflight():
+    """Report which secrets arrived, by shape only - never by value."""
+    pem = os.environ.get("APP_PRIVATE_KEY", "")
+    report = {k: len(os.environ.get(k, "").strip()) for k in SECRET_KEYS}
+    report["pem_has_header"] = "BEGIN" in pem and "PRIVATE KEY" in pem
+    report["pem_newlines"] = pem.count("\n")
+    report["pem_literal_backslash_n"] = "\\n" in pem
+    annotate("notice", "factory preflight (lengths only)", json.dumps(report))
+
+    missing = [k for k in ("APP_ID", "APP_PRIVATE_KEY")
+               if not os.environ.get(k, "").strip()]
+    if missing:
+        annotate("error", "missing required secrets",
+                 f"{', '.join(missing)} arrived empty. Add them under "
+                 f"Settings > Secrets and variables > Actions, then re-run.")
+        return False
+    if not report["pem_has_header"]:
+        annotate("error", "APP_PRIVATE_KEY malformed",
+                 "No '-----BEGIN ... PRIVATE KEY-----' header found. Paste the "
+                 ".pem file contents verbatim, including the BEGIN and END lines.")
+        return False
+    if not os.environ.get("APP_ID", "").strip().isdigit():
+        annotate("error", "APP_ID malformed",
+                 "APP_ID must be the numeric App ID (e.g. 4964810), not the Client ID.")
+        return False
+    return True
 
 
 def http(method, url, token=None, data=None, scheme="Bearer", accept=None):
@@ -370,15 +416,22 @@ def process_clickup(token):
     results = []
     if not os.environ.get("CLICKUP_TOKEN", "").strip() or not os.environ.get("CLICKUP_LIST_ID", "").strip():
         log("[clickup] token/list not configured - task channel idle")
+        annotate("notice", "clickup channel idle",
+                 "CLICKUP_TOKEN / CLICKUP_LIST_ID not set, so no tasks were polled.")
         return results
     list_id = os.environ["CLICKUP_LIST_ID"].strip()
     status, data = clickup("GET", f"/list/{list_id}/task?include_closed=false&subtasks=true")
     if status != 200 or not isinstance(data, dict):
         log(f"[clickup] cannot read list {list_id} ({status}): {data}")
+        annotate("error", "clickup list unreadable",
+                 f"GET /list/{list_id}/task returned {status}. Check CLICKUP_TOKEN scope "
+                 f"and that CLICKUP_LIST_ID is the numeric List id.")
         return [{"state": "error", "detail": f"clickup list read {status}"}]
 
     tasks = data.get("tasks", [])
     log(f"[clickup] {len(tasks)} open tasks in list {list_id}")
+    annotate("notice", "clickup polled",
+             f"{len(tasks)} open tasks in list {list_id}, looking for tag '{TRIGGER_TAG}'")
     for task in tasks:
         tags = [t.get("name", "").lower() for t in task.get("tags", [])]
         if TRIGGER_TAG not in tags:
@@ -420,10 +473,28 @@ def process_clickup(token):
 def main():
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     log(f"workflow-factory start {started} repo={REPO} dry_run={DRY_RUN}")
-    token = installation_token()
-    log("installation token acquired")
 
-    results = process_requests(token) + process_clickup(token)
+    if not preflight():
+        sys.exit(1)
+
+    try:
+        token = installation_token()
+    except SystemExit as exc:
+        annotate("error", "GitHub App auth failed", exc)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        annotate("error", "GitHub App auth crashed",
+                 f"{type(exc).__name__}: {exc}")
+        sys.exit(1)
+    log("installation token acquired")
+    annotate("notice", "auth ok", "installation token acquired")
+
+    try:
+        results = process_requests(token) + process_clickup(token)
+    except Exception as exc:  # noqa: BLE001
+        annotate("error", "factory crashed", f"{type(exc).__name__}: {exc}")
+        raise
+
     summary = {"started_at": started,
                "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "repo": REPO,
@@ -433,10 +504,20 @@ def main():
     log("--- summary ---")
     log(json.dumps(summary, indent=2, ensure_ascii=False))
 
+    for res in results:
+        target = res.get("file") or res.get("task") or res.get("request") or "?"
+        line = f"{target}: {res.get('state')} {res.get('detail', '')}"
+        annotate("error" if res.get("state") == "error" else "notice",
+                 "factory result", line)
+    if not results:
+        annotate("notice", "factory result",
+                 "nothing to do: no request files matched and no tagged tasks found")
+
     if results and not DRY_RUN:
-        put_file(token, "automation/log/last-run.json",
-                 json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
-                 "factory: log last run [skip ci]")
+        state, detail = put_file(token, "automation/log/last-run.json",
+                                 json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+                                 "factory: log last run")
+        annotate("notice", "run log", f"automation/log/last-run.json {state}")
 
     if any(r.get("state") == "error" for r in results):
         sys.exit(1)
