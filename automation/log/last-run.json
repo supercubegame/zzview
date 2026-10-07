@@ -1,8 +1,8 @@
 {
-  "started_at": "2026-10-07T06:36:28+00:00",
-  "finished_at": "2026-10-07T06:36:31+00:00",
+  "started_at": "2026-10-07T13:53:25+00:00",
+  "finished_at": "2026-10-07T13:53:28+00:00",
   "repo": "supercubegame/zzview",
-  "run_url": "https://github.com/supercubegame/zzview/actions/runs/37582428134",
+  "run_url": "https://github.com/supercubegame/zzview/actions/runs/37632106441",
   "dry_run": false,
   "results": [
     {
@@ -20,8 +20,8 @@
     {
       "request": "test-trigger.json",
       "file": ".github/workflows/.test-trigger.yml",
-      "state": "unchanged",
-      "detail": "https://github.com/supercubegame/zzview/blob/main/.github/workflows/.test-trigger.yml"
+      "state": "error",
+      "detail": "422: {'message': 'Invalid request.\\n\\n\"sha\" wasn\\'t supplied.', 'documentation_url': 'https://docs.github.com/rest/repos/contents#create-or-update-file-contents', 'status': '422'}"
     }
   ]
 }
